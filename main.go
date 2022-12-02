@@ -7,6 +7,7 @@ import (
 	"encoding/json"
 	"fmt"
 	"time"
+	mathrand "math/rand"
 )
 
 // Message is the increment counter message
@@ -75,10 +76,20 @@ func sender(out chan []byte, max int, encryptor func(data []byte) []byte) {
 }
 
 // createRandomDuplicate returns a function which randomly returns true
-func createRandomDuplicate(prob int) func() bool {
+func createRandomDuplicate(prob float64) func() bool {
 	return func() bool {
-		// TODO: Implement some random logic based on passed in probability
 		// If 0, should never return true
+		if prob <= 0.0 {
+			return false
+		}
+		if prob >= 1.0 {	// always duplicate
+			return true
+		}
+
+		r := mathrand.Intn(1000)
+		if float64(r) < 1000.0*prob {
+			return true
+		}
 		return false
 	}
 }
@@ -133,6 +144,13 @@ func getReceiver(in chan []byte, decryptor func(data []byte) []byte) func() int 
 func main() {
 	// TODO: Take some arguments to vary the
 	// test variables
+	prob := 0.0	// probability value between [0, 1]
+
+	// Seeding with different values to result in different random sequence on
+	// different application/test runs
+	seedValue := time.Now().UnixNano()
+	mathrand.Seed(seedValue)
+
 	// maxInt is the state we want to check
 	maxInt := 1000
 	// senderToRoute represents the network queue between the sender and the router
@@ -141,7 +159,7 @@ func main() {
 	routeToReceiver := make(chan []byte, 1024)
 	encrypt, decrypt := encryptionFunc()
 	receiver := getReceiver(routeToReceiver, decrypt)
-	duplicateProb := createRandomDuplicate(0)
+	duplicateProb := createRandomDuplicate(prob)
 	go router(senderToRoute, routeToReceiver, duplicateProb)
 	start := time.Now()
 	// The sender, we're going

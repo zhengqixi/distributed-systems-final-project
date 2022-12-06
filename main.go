@@ -97,8 +97,7 @@ func createRandomDuplicate(prob float64) func() bool {
 // router is a function representing the network router
 func router(fromSender chan []byte, toReceiver chan []byte, duplicate func() bool) {
 	for data := range fromSender {
-		toReceiver <- data
-		if duplicate() {
+		if !duplicate() {
 			toReceiver <- data
 		}
 	}
@@ -108,9 +107,9 @@ func router(fromSender chan []byte, toReceiver chan []byte, duplicate func() boo
 // getReceiver creates a receiver function
 // We have a function create a function to account for the control case
 // Where we don't check a timestamp at all
-func getReceiver(in chan []byte, decryptor func(data []byte) []byte) func() int {
+func getReceiver(in chan []byte, decryptor func(data []byte) []byte) func() (int, time.Time) {
 	if decryptor == nil {
-		return func() int {
+		return func() (int, time.Time) {
 			state := 0
 			for data := range in {
 				var m Message
@@ -119,12 +118,12 @@ func getReceiver(in chan []byte, decryptor func(data []byte) []byte) func() int 
 				}
 				state += m.Value
 			}
-			return state
+			return state, time.Now()
 		}
 	} else {
-		return func() int {
+		return func() (int, time.Time) {
 			state := 0
-			lastSeenTimestamp := time.Time{}
+			lastSeenTimestamp := time.Now()
 			for data := range in {
 				decrypted := decryptor(data)
 				var m Message
@@ -136,23 +135,12 @@ func getReceiver(in chan []byte, decryptor func(data []byte) []byte) func() int 
 					lastSeenTimestamp = m.Timestamp
 				}
 			}
-			return state
+			return state, lastSeenTimestamp
 		}
 	}
 }
 
-func main() {
-	// TODO: Take some arguments to vary the
-	// test variables
-	prob := 0.0	// probability value between [0, 1]
-
-	// Seeding with different values to result in different random sequence on
-	// different application/test runs
-	seedValue := time.Now().UnixNano()
-	mathrand.Seed(seedValue)
-
-	// maxInt is the state we want to check
-	maxInt := 1000
+func test(prob float64, maxInt int) {
 	// senderToRoute represents the network queue between the sender and the router
 	senderToRoute := make(chan []byte, 1024)
 	// routeToReceiver represents the network queue between the router and the receiver
@@ -164,8 +152,22 @@ func main() {
 	start := time.Now()
 	// The sender, we're going
 	go sender(senderToRoute, maxInt, encrypt)
-	finalState := receiver()
-	end := time.Now()
+	finalState, end := receiver()
 	duration := end.Sub(start)
-	fmt.Printf("%f %d\n", duration.Seconds(), finalState)
+	fmt.Printf("Reslts for %d sent messages with approximate %.1f%% messages dropped\n", maxInt, 100.0*prob)
+	fmt.Printf("\tMessages sent %d, Messages received %d, Total time %f\n", maxInt, finalState, duration.Seconds())
+}
+
+func main() {
+	// Seeding with different values to result in different random sequence on
+	// different application/test runs
+	seedValue := time.Now().UnixNano()
+	mathrand.Seed(seedValue)
+
+	prob := 0.0	// probability value between [0, 1]
+	maxInt := 1000 // maxInt is the state we want to check
+	for prob < 0.9 {
+		test(prob, maxInt)
+		prob += 0.1
+	}
 }

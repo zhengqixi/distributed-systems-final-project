@@ -99,7 +99,7 @@ func router(fromSender chan []byte, toReceiver chan []byte, prob float64) {
 	for data := range fromSender {
 		toReceiver <- data
 		c := 0
-		for createRandomDuplicate(prob)() && c < 10 {
+		for createRandomDuplicate(prob)() || c < 10 {
 			c += 1
 			toReceiver <- data
 		}
@@ -142,7 +142,7 @@ func getReceiver(in chan []byte, decryptor func(data []byte) []byte) func() (int
 					lastSeenTimestamp = m.Timestamp
 				}
 			}
-			return state, lastSeenTimestamp, totalMessagesRcvd
+			return state, time.Now(), totalMessagesRcvd
 		}
 	}
 }
@@ -172,7 +172,7 @@ func main() {
 	mathrand.Seed(seedValue)
 
 	prob := 0.0	// probability value between [0, 1]
-	maxInt := 1000 // maxInt is the state we want to check
+	maxInt := 100000 // maxInt is the state we want to check
 	for prob < 0.9 {
 		test(prob, maxInt)
 		prob += 0.1

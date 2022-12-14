@@ -95,10 +95,12 @@ func createRandomDuplicate(prob float64) func() bool {
 }
 
 // router is a function representing the network router
-func router(fromSender chan []byte, toReceiver chan []byte, duplicate func() bool) {
+func router(fromSender chan []byte, toReceiver chan []byte, prob float64) {
 	for data := range fromSender {
 		toReceiver <- data
-		if duplicate() {
+		c := 0
+		for createRandomDuplicate(prob)() && c < 10 {
+			c += 1
 			toReceiver <- data
 		}
 	}
@@ -108,35 +110,39 @@ func router(fromSender chan []byte, toReceiver chan []byte, duplicate func() boo
 // getReceiver creates a receiver function
 // We have a function create a function to account for the control case
 // Where we don't check a timestamp at all
-func getReceiver(in chan []byte, decryptor func(data []byte) []byte) func() (int, time.Time) {
+func getReceiver(in chan []byte, decryptor func(data []byte) []byte) func() (int, time.Time, int) {
 	if decryptor == nil {
-		return func() (int, time.Time) {
+		return func() (int, time.Time, int) {
 			state := 0
+			totalMessagesRcvd := 0
 			for data := range in {
 				var m Message
 				if err := json.Unmarshal(data, &m); err != nil {
 					panic(err)
 				}
 				state += m.Value
+				totalMessagesRcvd += 1
 			}
-			return state, time.Now()
+			return state, time.Now(), totalMessagesRcvd
 		}
 	} else {
-		return func() (int, time.Time) {
+		return func() (int, time.Time, int) {
 			state := 0
-			lastSeenTimestamp := time.Now()
+			totalMessagesRcvd := 0
+			lastSeenTimestamp := time.Time{}
 			for data := range in {
 				decrypted := decryptor(data)
 				var m Message
 				if err := json.Unmarshal(decrypted, &m); err != nil {
 					panic(err)
 				}
+				totalMessagesRcvd += 1
 				if m.Timestamp.After(lastSeenTimestamp) {
 					state += m.Value
 					lastSeenTimestamp = m.Timestamp
 				}
 			}
-			return state, lastSeenTimestamp
+			return state, lastSeenTimestamp, totalMessagesRcvd
 		}
 	}
 }
@@ -148,15 +154,15 @@ func test(prob float64, maxInt int) {
 	routeToReceiver := make(chan []byte, 1024)
 	encrypt, decrypt := encryptionFunc()
 	receiver := getReceiver(routeToReceiver, decrypt)
-	duplicateProb := createRandomDuplicate(prob)
-	go router(senderToRoute, routeToReceiver, duplicateProb)
+	// duplicateProb := createRandomDuplicate(prob)
+	go router(senderToRoute, routeToReceiver, prob)
 	start := time.Now()
 	// The sender, we're going
 	go sender(senderToRoute, maxInt, encrypt)
-	finalState, end := receiver()
+	finalState, end, totalMessagesRcvd := receiver()
 	duration := end.Sub(start)
-	fmt.Printf("Reslts for %d sent messages with approximate %.1f%% messages duplicated at router\n", maxInt, 100.0*prob)
-	fmt.Printf("\tMessages sent %d, Messages received %d, Total time %f\n", maxInt, finalState, duration.Seconds())
+	// fmt.Printf("Reslts for %d sent messages with approximate %.1f%% messages duplicated at router\n", maxInt, 100.0*prob)
+	fmt.Printf("\tMessages sent %d, Messages received %d, Final State %d, Total time(nanoseconds) %d\n", maxInt, totalMessagesRcvd, finalState, duration.Nanoseconds())
 }
 
 func main() {

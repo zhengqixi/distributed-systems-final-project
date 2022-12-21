@@ -97,10 +97,16 @@ func createRandomDuplicate(prob float64) func() bool {
 // router is a function representing the network router
 func router(fromSender chan []byte, toReceiver chan []byte, prob float64) {
 	for data := range fromSender {
-		toReceiver <- data
 		c := 0
-		for createRandomDuplicate(prob)() || c < 10 {
+		duplicateMultiplier := 1
+		for c < 5 {
 			c += 1
+			if createRandomDuplicate(prob)() {
+				duplicateMultiplier = 2*duplicateMultiplier
+			}
+		}
+		for duplicateMultiplier > 0 {
+			duplicateMultiplier = duplicateMultiplier - 1
 			toReceiver <- data
 		}
 	}
@@ -162,7 +168,7 @@ func test(prob float64, maxInt int) {
 	finalState, end, totalMessagesRcvd := receiver()
 	duration := end.Sub(start)
 	// fmt.Printf("Reslts for %d sent messages with approximate %.1f%% messages duplicated at router\n", maxInt, 100.0*prob)
-	fmt.Printf("\tMessages sent %d, Messages received %d, Final State %d, Total time(nanoseconds) %d\n", maxInt, totalMessagesRcvd, finalState, duration.Nanoseconds())
+	fmt.Printf("\tMessages sent %d, Probability: %.2f, Messages received %d, Final State %d, Total time(nanoseconds) %d\n", maxInt, prob, totalMessagesRcvd, finalState, duration.Nanoseconds())
 }
 
 func main() {
